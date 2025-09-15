@@ -1,12 +1,14 @@
 package jobs
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	filepath "path/filepath"
 	"sort"
 	"strconv"
@@ -15,21 +17,36 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/go-git/go-git/v5"
 	"github.com/spf13/viper"
-	"github.com/xm1k3/cent/internal/utils"
+	"github.com/xm1k3/cent/v2/internal/utils"
 )
 
 func cloneRepo(gitPath string, console bool, index string, timestamp string) error {
-	cloneOptions := &git.CloneOptions{
-		URL: gitPath,
-	}
-
 	destDir := filepath.Join(os.TempDir(), fmt.Sprintf("cent%s/repo%s", timestamp, index))
 
-	_, err := git.PlainClone(destDir, false, cloneOptions)
+	if err := os.MkdirAll(destDir, 0700); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	timeout := 60 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth", "1", "--single-branch", "--no-tags", "--no-recurse-submodules", gitPath, destDir)
+
+	if console {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("git clone timed out for %s", gitPath)
+	}
 	if err != nil {
-		return err
+		return fmt.Errorf("git clone failed for %s: %w", gitPath, err)
 	}
 
 	fmt.Printf(color.GreenString("[CLONED] %s\n", gitPath))
@@ -50,6 +67,10 @@ func Start(_path string, console bool, threads int, defaultTimeout int) {
 	timestamp := strconv.Itoa(int(time.Now().Unix()))
 	if _, err := os.Stat(filepath.Join(_path)); os.IsNotExist(err) {
 		os.Mkdir(filepath.Join(_path), 0700)
+	}
+
+	if _, err := exec.LookPath("git"); err != nil {
+		log.Fatalf("Git is not installed or not available in PATH: %v", err)
 	}
 
 	work := make(chan [2]string)

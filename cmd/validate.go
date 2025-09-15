@@ -5,14 +5,13 @@ package cmd
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/spf13/cobra"
-	"github.com/xm1k3/cent/pkg/jobs"
+	"github.com/xm1k3/cent/v2/pkg/jobs"
 )
 
 // validateCmd represents the validate command
@@ -59,7 +58,7 @@ If a template is found to be invalid, it is deleted from the folder.`,
 }
 
 func readFile(filePath string) (string, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", err
 	}
